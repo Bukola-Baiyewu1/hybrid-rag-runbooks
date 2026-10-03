@@ -36,11 +36,12 @@ class RetrievalRow:
     hit1: float
     mrr: float
     gate_accuracy: float
+    context_chars: float  # average characters in the top-k passages (what the model must read)
     by_type: dict = field(default_factory=dict)
 
 
 def evaluate_retrieval(athena: Athena, golden: list[GoldenItem], strategy: str, mode: str) -> RetrievalRow:
-    recalls, hits, rrs, gate = [], [], [], []
+    recalls, hits, rrs, gate, context = [], [], [], [], []
     per_type: dict[str, list[float]] = {}
     for item in golden:
         result = athena.retrieve(item.question, mode=mode, strategy=strategy)
@@ -49,13 +50,21 @@ def evaluate_retrieval(athena: Athena, golden: list[GoldenItem], strategy: str, 
         gate.append(1.0 if opened == item.answerable else 0.0)
         if not item.answerable:
             continue
+        context.append(sum(len(c.text) for c in chunks))
         r = recall_at_k(chunks, item)
         recalls.append(r)
         hits.append(hit_at_1(chunks, item))
         rrs.append(reciprocal_rank(chunks, item))
         per_type.setdefault(item.type, []).append(r)
     return RetrievalRow(
-        strategy, mode, mean(recalls), mean(hits), mean(rrs), mean(gate), {t: mean(v) for t, v in per_type.items()}
+        strategy,
+        mode,
+        mean(recalls),
+        mean(hits),
+        mean(rrs),
+        mean(gate),
+        round(mean(context)),
+        {t: mean(v) for t, v in per_type.items()},
     )
 
 
@@ -131,12 +140,13 @@ def render_markdown(meta: dict, retrieval: list[RetrievalRow], answers: list[dic
         "",
         "## Retrieval (answerable questions)",
         "",
-        "| Strategy | Mode | Recall@k | Hit@1 | MRR | Gate accuracy |",
-        "|---|---|---|---|---|---|",
+        "| Strategy | Mode | Recall@k | Hit@1 | MRR | Multi-hop recall | Gate accuracy | Context chars |",
+        "|---|---|---|---|---|---|---|---|",
     ]
     for r in retrieval:
         lines.append(
-            f"| {r.strategy} | {r.mode} | {pct(r.recall)} | {pct(r.hit1)} | {r.mrr:.3f} | {pct(r.gate_accuracy)} |"
+            f"| {r.strategy} | {r.mode} | {pct(r.recall)} | {pct(r.hit1)} | {r.mrr:.3f} | "
+            f"{pct(r.by_type.get('multi_hop', 0.0))} | {pct(r.gate_accuracy)} | {r.context_chars:,.0f} |"
         )
     best = max(retrieval, key=lambda r: (r.recall, r.mrr))
     lines += ["", f"Best configuration by recall: **{best.strategy} + {best.mode}**.", ""]
@@ -205,19 +215,29 @@ def main(argv: list[str] | None = None) -> int:
     )
     print()
     print(md)
-    if args.github:
-        for r in retrieval:
-            print(
-                f"::notice title=retrieval {r.strategy}/{r.mode}::recall={r.recall:.3f} hit1={r.hit1:.3f} "
-                f"mrr={r.mrr:.3f} gate={r.gate_accuracy:.3f} lookup={r.by_type.get('lookup', 0):.3f} "
-                f"multi_hop={r.by_type.get('multi_hop', 0):.3f} ambiguous={r.by_type.get('ambiguous', 0):.3f}"
-            )
-        for a in answers:
-            print(
-                f"::notice title=answers {a['strategy']}/{a['mode']}::faithfulness={a['faithfulness']:.3f} "
-                f"citation={a['citation_accuracy']:.3f} abstention={a['abstention_accuracy']:.3f} "
-                f"answered={a['answered']} latency_ms={a['avg_latency_ms']}"
-            )
+    if args.github:  # GitHub shows at most 10 notices per step, so group them
+        for strategy in strategies:
+            rows = [r for r in retrieval if r.strategy == strategy]
+            parts = [
+                f"{r.mode}: recall={r.recall:.3f} hit1={r.hit1:.3f} mrr={r.mrr:.3f} "
+                f"multihop={r.by_type.get('multi_hop', 0):.3f} gate={r.gate_accuracy:.3f} ctx={r.context_chars:.0f}"
+                for r in rows
+            ]
+            print(f"::notice title=retrieval {strategy}::" + " | ".join(parts))
+        parts = [
+            f"{a['strategy']}/{a['mode']}: faithfulness={a['faithfulness']:.3f} citation={a['citation_accuracy']:.3f} "
+            f"abstention={a['abstention_accuracy']:.3f} answered={a['answered']} latency_ms={a['avg_latency_ms']}"
+            for a in answers
+        ]
+        print("::notice title=answers::" + " | ".join(parts))
+        wrong = [
+            f"{row['id']}({'abstained' if row['abstained'] else 'answered'})"
+            for a in answers
+            if a["mode"] == "hybrid_rerank"
+            for row, item in zip(a["rows"], golden, strict=True)
+            if row["abstained"] == item.answerable
+        ]
+        print("::notice title=abstention errors (headers/hybrid_rerank)::" + (" ".join(wrong) or "none"))
     return 0
 
 

@@ -1,6 +1,6 @@
 """End-to-end smoke test against a running Athena API.
 
-    python scripts/smoke_test.py http://localhost:8000
+python scripts/smoke_test.py http://localhost:8000
 """
 
 from __future__ import annotations
