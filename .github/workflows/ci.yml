@@ -89,6 +89,57 @@ jobs:
           name: eval-results
           path: eval_results/
 
+  aegis:
+    name: Aegis agent with Athena as its retriever
+    runs-on: ubuntu-latest
+    env:
+      FASTEMBED_CACHE_PATH: ${{ github.workspace }}/.models
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: Bukola-Baiyewu1/agentic-devops-assistant
+          path: aegis
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - uses: actions/cache@v4
+        with:
+          path: .models
+          key: fastembed-bge-small-en-v1.5-ms-marco-minilm-l6
+      - name: Start Athena over the Aegis runbooks
+        run: |
+          python -m venv .athena && .athena/bin/pip install -q --require-hashes -r requirements.txt
+          ATHENA_CORPUS_DIR=aegis/runbooks nohup .athena/bin/uvicorn src.api.main:app --port 8100 > athena.log 2>&1 &
+          for i in $(seq 1 90); do curl -sf localhost:8100/ready && break; sleep 2; done
+      - name: Compare Aegis retrieval - built-in TF-IDF vs Athena
+        working-directory: aegis
+        run: |
+          python -m venv .venv && .venv/bin/pip install -q --require-hashes -r requirements.txt
+          .venv/bin/python -m scripts.eval_retrieval --athena-url http://localhost:8100 | tee comparison.txt
+          echo "::notice title=Aegis retrieval: TF-IDF vs Athena::$(tail -n 5 comparison.txt | tr -s ' ' | paste -sd '|')"
+      - name: Aegis end to end with Athena (alert -> cited plan citing an Athena passage)
+        working-directory: aegis
+        env:
+          AEGIS_RETRIEVER: athena
+          ATHENA_URL: http://localhost:8100
+          DATABASE_URL: sqlite:///./ci.db
+        run: |
+          .venv/bin/python - <<'PY'
+          from src import agent
+          from src.demo import sim
+          from src.rag import AthenaRetriever, get_retriever
+          assert isinstance(get_retriever(), AthenaRetriever)
+          sim.inject_error()
+          result = agent.plan({"event_id": "ci", "name": "High 5xx error rate", "description": "500 errors after deploy", "service": "web"})
+          print(result["proposal"]["tool_name"], result["citation"])
+          assert result["proposal"]["tool_name"] == "restart_service"
+          assert result["citation"]["runbook_version"] == "athena"
+          PY
+      - name: Athena log on failure
+        if: failure()
+        run: cat athena.log
+
   security:
     name: Dependency and secret scan
     runs-on: ubuntu-latest

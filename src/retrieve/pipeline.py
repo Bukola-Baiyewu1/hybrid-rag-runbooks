@@ -38,6 +38,7 @@ class Retrieved:
         return {
             **self.chunk.citation(),
             "text": self.chunk.text,
+            "checksum": self.chunk.checksum,
             "strategy": self.chunk.strategy,
             "score": round(self.score, 4),
             "dense_rank": self.dense_rank,

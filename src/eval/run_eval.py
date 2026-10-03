@@ -130,11 +130,40 @@ def evaluate_answers(athena: Athena, golden: list[GoldenItem], strategy: str, mo
     }
 
 
+SWEEP = (0.01, 0.02, 0.05, 0.1, 0.15, 0.2, 0.3, 0.5)
+
+
+def relevance_sweep(athena: Athena, golden: list[GoldenItem], strategy: str = "headers") -> dict:
+    """How the "not in the docs" gate would score at different reranker thresholds.
+
+    Shows the trade-off between declining answerable questions (false refusals)
+    and answering unanswerable ones (false answers). Calibrating on the same
+    68 questions is optimistic; treat it as a guide, not a guarantee.
+    """
+    scores = []
+    for item in golden:
+        result = athena.retrieve(item.question, mode="hybrid_rerank", strategy=strategy)
+        scores.append((result.relevance, item.answerable))
+    table = []
+    for t in SWEEP:
+        false_refusals = sum(1 for s, a in scores if a and s < t)
+        false_answers = sum(1 for s, a in scores if not a and s >= t)
+        table.append(
+            {
+                "threshold": t,
+                "accuracy": 1 - (false_refusals + false_answers) / len(scores),
+                "false_refusals": false_refusals,
+                "false_answers": false_answers,
+            }
+        )
+    return {"strategy": strategy, "current": settings.min_relevance, "table": table}
+
+
 def pct(v: float | None) -> str:
     return "n/a" if v is None else f"{v * 100:.1f}%"
 
 
-def render_markdown(meta: dict, retrieval: list[RetrievalRow], answers: list[dict]) -> str:
+def render_markdown(meta: dict, retrieval: list[RetrievalRow], answers: list[dict], sweep: dict | None = None) -> str:
     lines = [
         "# Athena evaluation results",
         "",
@@ -165,6 +194,18 @@ def render_markdown(meta: dict, retrieval: list[RetrievalRow], answers: list[dic
             f"| {a['strategy']} | {a['mode']} | {pct(a['faithfulness'])} | {pct(a['citation_accuracy'])} | "
             f"{pct(a['abstention_accuracy'])} | {pct(a['correctness'])} |"
         )
+    if sweep and sweep["table"]:
+        lines += [
+            "",
+            f"## Relevance gate calibration ({sweep['strategy']} + hybrid_rerank, threshold now {sweep['current']})",
+            "",
+            "| Reranker threshold | Gate accuracy | Answerable questions refused | Unanswerable questions answered |",
+            "|---|---|---|---|",
+        ]
+        for row in sweep["table"]:
+            lines.append(
+                f"| {row['threshold']} | {pct(row['accuracy'])} | {row['false_refusals']} | {row['false_answers']} |"
+            )
     return "\n".join(lines) + "\n"
 
 
@@ -194,6 +235,7 @@ def main(argv: list[str] | None = None) -> int:
     retrieval = [evaluate_retrieval(athena, golden, s, m) for s in strategies for m in MODES]
     answer_configs = [("headers", "dense"), ("headers", "hybrid_rerank")]
     answers = [evaluate_answers(athena, golden, s, m, args.live) for s, m in answer_configs if s in strategies]
+    sweep = relevance_sweep(athena, golden) if athena.retriever.reranker is not None else None
 
     by_type: dict[str, int] = {}
     for g in golden:
@@ -210,11 +252,14 @@ def main(argv: list[str] | None = None) -> int:
         "seconds": round(time.time() - started, 1),
         "llm_usage": vars(llm.usage),
     }
-    md = render_markdown(meta, retrieval, answers)
+    md = render_markdown(meta, retrieval, answers, sweep)
     RESULTS_DIR.mkdir(exist_ok=True)
     (RESULTS_DIR / "latest.md").write_text(md, encoding="utf-8")
     (RESULTS_DIR / "latest.json").write_text(
-        json.dumps({"meta": meta, "retrieval": [vars(r) for r in retrieval], "answers": answers}, indent=2),
+        json.dumps(
+            {"meta": meta, "retrieval": [vars(r) for r in retrieval], "answers": answers, "gate_sweep": sweep},
+            indent=2,
+        ),
         encoding="utf-8",
     )
     print()
@@ -242,6 +287,15 @@ def main(argv: list[str] | None = None) -> int:
             if row["abstained"] == item.answerable
         ]
         print("::notice title=abstention errors (headers/hybrid_rerank)::" + (" ".join(wrong) or "none"))
+        if sweep:
+            print(
+                "::notice title=gate sweep::"
+                + " | ".join(
+                    f"t={r['threshold']}: acc={r['accuracy']:.3f} refused={r['false_refusals']} "
+                    f"answered={r['false_answers']}"
+                    for r in sweep["table"]
+                )
+            )
     return 0
 
 

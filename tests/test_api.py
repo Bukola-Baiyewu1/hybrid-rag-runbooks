@@ -39,7 +39,7 @@ def test_retrieve_contract_used_by_aegis(client):
     body = r.json()
     assert r.status_code == 200 and len(body["results"]) == 3 and body["relevant"] is True
     first = body["results"][0]
-    for key in ("chunk_id", "source", "heading", "lines", "text", "score"):
+    for key in ("chunk_id", "source", "heading", "lines", "text", "checksum", "score"):
         assert key in first
     assert first["chunk_id"].startswith("high-error-rate#")
 
