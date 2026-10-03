@@ -41,7 +41,11 @@ class RetrievalRow:
 
 
 def evaluate_retrieval(athena: Athena, golden: list[GoldenItem], strategy: str, mode: str) -> RetrievalRow:
-    recalls, hits, rrs, gate, context = [], [], [], [], []
+    recalls: list[float] = []
+    hits: list[float] = []
+    rrs: list[float] = []
+    gate: list[float] = []
+    context: list[float] = []
     per_type: dict[str, list[float]] = {}
     for item in golden:
         result = athena.retrieve(item.question, mode=mode, strategy=strategy)
@@ -50,7 +54,7 @@ def evaluate_retrieval(athena: Athena, golden: list[GoldenItem], strategy: str, 
         gate.append(1.0 if opened == item.answerable else 0.0)
         if not item.answerable:
             continue
-        context.append(sum(len(c.text) for c in chunks))
+        context.append(float(sum(len(c.text) for c in chunks)))
         r = recall_at_k(chunks, item)
         recalls.append(r)
         hits.append(hit_at_1(chunks, item))
