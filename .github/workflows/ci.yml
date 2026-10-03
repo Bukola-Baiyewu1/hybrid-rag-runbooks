@@ -118,6 +118,16 @@ jobs:
           python -m venv .venv && .venv/bin/pip install -q --require-hashes -r requirements.txt
           .venv/bin/python -m scripts.eval_retrieval --athena-url http://localhost:8100 | tee comparison.txt
           echo "::notice title=Aegis retrieval: TF-IDF vs Athena::$(tail -n 5 comparison.txt | tr -s ' ' | paste -sd '|')"
+          .venv/bin/python - <<'PY' > misses.txt
+          import json, httpx
+          for case in json.load(open("evals/retrieval_cases.json")):
+              body = httpx.post("http://localhost:8100/retrieve", json={"query": case["query"], "top_k": 3}, timeout=60).json()
+              top = [f"{r['chunk_id']}={r['score']:.3f}" for r in body["results"]]
+              ok = bool(case["relevant_chunks"]) == body["relevant"] and (not top or top[0].split("#")[0] + ".md" == (case["expected_source"] or ""))
+              if not ok or not case["expected_source"]:
+                  print(f"{case['query']} relevant={body['relevant']} top={top}")
+          PY
+          echo "::notice title=Athena on Aegis queries (misses and unrelated)::$(paste -sd '|' misses.txt)"
       - name: Aegis end to end with Athena (alert -> cited plan citing an Athena passage)
         working-directory: aegis
         env:

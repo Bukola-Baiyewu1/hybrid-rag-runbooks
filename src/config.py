@@ -76,7 +76,7 @@ class Settings(BaseModel):
 
     # ---- answer gating ----------------------------------------------------------
     # Below these, Athena says "not in the docs" instead of answering.
-    min_relevance: float = 0.15  # reranker probability of the best passage (0..1)
+    min_relevance: float = 0.05  # reranker probability of the best passage (0..1); see the gate calibration
     min_dense_similarity: float = 0.60  # used instead when no reranker runs (cosine)
     min_confidence: float = 0.50  # final confidence after citation verification
     support_threshold: float = 0.60  # lexical verifier: share of claim terms found in the source
@@ -115,7 +115,7 @@ def load_settings() -> Settings:
         rerank_model=_env("ATHENA_RERANK_MODEL", "claude-haiku-4-5-20251001"),
         llm_timeout_seconds=float(_env("ATHENA_LLM_TIMEOUT_SECONDS", "60")),
         max_answer_tokens=int(_env("ATHENA_MAX_ANSWER_TOKENS", "800")),
-        min_relevance=float(_env("ATHENA_MIN_RELEVANCE", "0.15")),
+        min_relevance=float(_env("ATHENA_MIN_RELEVANCE", "0.05")),
         min_dense_similarity=float(_env("ATHENA_MIN_DENSE_SIMILARITY", "0.60")),
         min_confidence=float(_env("ATHENA_MIN_CONFIDENCE", "0.50")),
         support_threshold=float(_env("ATHENA_SUPPORT_THRESHOLD", "0.60")),
