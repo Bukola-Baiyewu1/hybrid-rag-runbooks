@@ -1,3 +1,43 @@
+[project]
+name = "athena-hybrid-rag"
+version = "1.0.0"
+description = "Athena: hybrid RAG over DevOps runbooks with reranking, verified citations, and an evaluation harness."
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.11"
+dynamic = ["dependencies"]
+
+[tool.setuptools.dynamic]
+dependencies = { file = ["requirements.in"] }
+
 [tool.pytest.ini_options]
 pythonpath = ["."]
 testpaths = ["tests"]
+addopts = "-p no:cacheprovider"
+filterwarnings = ["ignore::DeprecationWarning"]
+
+[tool.coverage.run]
+source = ["src"]
+omit = ["src/embed.py", "src/retrieve/rerank.py"]  # model-backed classes are exercised by the CI eval job
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = true
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "S", "SIM"]
+ignore = ["S101", "S608", "B008", "SIM105", "SIM905"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S105", "S106", "S108", "E501"]
+"dashboard/*" = ["E501"]
+
+[tool.mypy]
+python_version = "3.11"
+ignore_missing_imports = true
+check_untyped_defs = true
+files = ["src"]

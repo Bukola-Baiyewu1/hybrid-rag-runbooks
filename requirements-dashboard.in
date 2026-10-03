@@ -1,0 +1,4 @@
+# The Streamlit dashboard runs in its own container and only talks to the API.
+#   uv pip compile requirements-dashboard.in --universal --python-version 3.11 --generate-hashes -o requirements-dashboard.txt
+streamlit>=1.40,<2
+httpx>=0.28,<1
