@@ -1,0 +1,7 @@
+# Lesson 1 needs nothing beyond the standard library to chunk markdown/text.
+# These two are only used if you load .html or .pdf runbooks:
+beautifulsoup4>=4.12
+pypdf>=4.0
+
+# Testing
+pytest>=8.0
