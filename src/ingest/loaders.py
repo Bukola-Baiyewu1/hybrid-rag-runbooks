@@ -10,9 +10,11 @@ need a small helper library to pull the words out, and we only import those
 libraries when we actually meet such a file — so you don't need them installed
 to work with markdown runbooks.
 """
+
+from __future__ import annotations
+
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List
 
 from .. import config
 
@@ -20,8 +22,9 @@ from .. import config
 @dataclass
 class Document:
     """One loaded file: its text, and the filename it came from."""
+
     text: str
-    source: str   # e.g. "high-error-rate.md"
+    source: str  # e.g. "high-error-rate.md"
 
 
 def _read_markdown_or_text(path: Path) -> str:
@@ -32,12 +35,14 @@ def _read_markdown_or_text(path: Path) -> str:
 
 def _read_html(path: Path) -> str:
     from bs4 import BeautifulSoup  # imported only when we hit an .html file
+
     soup = BeautifulSoup(path.read_text(encoding="utf-8"), "html.parser")
     return soup.get_text(separator="\n")
 
 
 def _read_pdf(path: Path) -> str:
     from pypdf import PdfReader  # imported only when we hit a .pdf file
+
     reader = PdfReader(str(path))
     return "\n".join((page.extract_text() or "") for page in reader.pages)
 
@@ -62,16 +67,16 @@ def load_file(path) -> Document:
     return Document(text=text, source=path.name)
 
 
-def load_corpus(corpus_dir: str = None) -> List[Document]:
+def load_corpus(corpus_dir: str | None = None) -> list[Document]:
     """Load every supported file in the corpus folder, sorted by name."""
-    folder = Path(corpus_dir or config.CORPUS_DIR)
+    folder = Path(corpus_dir or config.settings.corpus_dir)
     if not folder.is_dir():
         raise FileNotFoundError(f"Corpus folder not found: {folder.resolve()}")
 
-    docs: List[Document] = []
+    docs: list[Document] = []
     for path in sorted(folder.iterdir()):
         if path.suffix.lower() in _READERS:
             doc = load_file(path)
-            if doc.text:                 # skip empty files
+            if doc.text:  # skip empty files
                 docs.append(doc)
     return docs

@@ -5,8 +5,9 @@
 I load the corpus, chunk it with each strategy, print how many chunks each
 produced, and show one example chunk so you can eyeball the difference.
 """
+
+from src.ingest.chunking import STRATEGIES, chunk_corpus
 from src.ingest.loaders import load_corpus
-from src.ingest.chunking import chunk_corpus, STRATEGIES
 
 
 def main():
