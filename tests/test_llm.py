@@ -42,19 +42,19 @@ def test_returns_only_text_blocks_and_counts_usage():
     llm = _llm(_reply("hello"))
     assert llm.complete(system="s", user="u", model="m") == "hello"
     assert llm.usage.calls == 1 and llm.usage.input_tokens == 10
-    assert llm.client.messages.calls[0]["temperature"] == 0
+    assert "temperature" not in llm.client.messages.calls[0]
 
 
-def test_retries_without_temperature_when_the_model_rejects_it():
-    llm = _llm(_bad_request("temperature may only be set to 1 when thinking is enabled"), _reply("ok"), _reply("ok"))
-    assert llm.complete(system="s", user="u", model="m") == "ok"
-    calls = llm.client.messages.calls
-    assert "temperature" in calls[0] and "temperature" not in calls[1]
-    llm.complete(system="s", user="u", model="m")  # remembered: no failing call first
-    assert len(calls) == 3 and "temperature" not in calls[2]
+def test_every_argument_is_accepted_by_the_installed_sdk():
+    """Guards against SDK upgrades that drop a parameter (the fake client would not notice)."""
+    import inspect
+
+    accepted = inspect.signature(anthropic.resources.messages.Messages.create).parameters
+    sent = LLM.request(system="s", user="u", model="m", max_tokens=10)
+    assert set(sent) <= set(accepted), set(sent) - set(accepted)
 
 
-def test_other_bad_requests_are_not_retried():
+def test_api_errors_propagate():
     llm = _llm(_bad_request("model: no-such-model"))
     with pytest.raises(anthropic.BadRequestError):
         llm.complete(system="s", user="u", model="m")

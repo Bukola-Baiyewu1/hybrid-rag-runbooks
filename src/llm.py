@@ -35,7 +35,16 @@ class Usage:
 class LLM:
     client: Any = None
     usage: Usage = field(default_factory=Usage)
-    no_temperature: set[str] = field(default_factory=set)
+
+    @staticmethod
+    def request(*, system: str, user: str, model: str, max_tokens: int) -> dict[str, Any]:
+        """The Messages API arguments for one call (kept separate so tests can check them against the SDK)."""
+        return {
+            "model": model,
+            "max_tokens": max_tokens,
+            "system": system,
+            "messages": [{"role": "user", "content": user}],
+        }
 
     def _client(self) -> Any:
         if self.client is None:
@@ -49,26 +58,10 @@ class LLM:
         return self.client
 
     def complete(self, *, system: str, user: str, model: str, max_tokens: int = 800) -> str:
-        request: dict[str, Any] = {
-            "model": model,
-            "max_tokens": max_tokens,
-            "system": system,
-            "messages": [{"role": "user", "content": user}],
-        }
-        if model not in self.no_temperature:
-            request["temperature"] = 0
-        try:
-            resp = self._client().messages.create(**request)
-        except Exception as exc:
-            # Models that reason before answering reject a custom temperature with a 400.
-            # Remember that for this model and retry once with its default sampling.
-            if "temperature" not in request or getattr(exc, "status_code", None) != 400:
-                raise
-            if "temperature" not in str(exc).lower():
-                raise
-            self.no_temperature.add(model)
-            request.pop("temperature")
-            resp = self._client().messages.create(**request)
+        # No temperature: current Claude models reason before answering and use their own
+        # sampling, and the pinned SDK no longer accepts the parameter.
+        request = self.request(system=system, user=user, model=model, max_tokens=max_tokens)
+        resp = self._client().messages.create(**request)
         u = getattr(resp, "usage", None)
         self.usage.add(Usage(int(getattr(u, "input_tokens", 0) or 0), int(getattr(u, "output_tokens", 0) or 0), 1))
         return "".join(getattr(b, "text", "") for b in resp.content if getattr(b, "type", "") == "text").strip()
