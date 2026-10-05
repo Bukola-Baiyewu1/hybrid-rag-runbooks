@@ -93,12 +93,35 @@ the pipeline cites and gates correctly; they say nothing about Claude's
 writing. The live run replaces both parts with Claude:
 
 ```bash
-ANTHROPIC_API_KEY=... python -m src.eval.run_eval --live --quick
+python -m src.eval.run_eval --live --quick
 ```
 
-It adds Claude-written answers, Claude as the citation judge, and Claude-graded
-correctness against the golden answers, and writes them to
-`eval_results/latest.md`.
+### Live results (Claude `claude-sonnet-5-5`, October 2026)
+
+Claude writes the answers, judges each sentence against the passage it cites,
+and grades each answer against the golden answer (1 correct and complete, 0.5
+partly correct, 0 wrong or missing; declining an answerable question scores 0).
+
+| Mode | Faithfulness | Citation accuracy | Abstention accuracy | Correctness |
+|---|---|---|---|---|
+| dense | 93.9% | 96.0% | 91.2% | 64.7% |
+| hybrid_rerank | 94.2% | 95.6% | 95.6% | 70.6% |
+
+Retrieval and gate calibration in the live run were identical to the offline
+run (Recall@5 95.7%, Hit@1 84.5%, MRR 0.914 for hybrid + rerank), as expected:
+retrieval does not use Claude.
+
+Reading the live numbers:
+
+* Better retrieval gives better answers from the same model: hybrid + rerank is
+  5.9 points more correct and 4.4 points better at abstaining than dense alone.
+* Abstention accuracy is 95.6% live against 98.5% offline. The difference is the
+  confidence gate: when the citation judge does not support enough of a Claude
+  answer, confidence falls below 0.5 and Athena declines. Those are answerable
+  questions declined, the safe direction of error.
+* Correctness of 70.6% is the main thing to improve. Next steps: grade partial
+  answers per missing step to see where they fall short, and test a larger
+  top-k for the multi-hop questions, where recall is lowest.
 
 ## Aegis with Athena
 

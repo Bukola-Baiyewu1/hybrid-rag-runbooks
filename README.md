@@ -56,19 +56,34 @@ and citing whole documents instead of sections. Header chunking is the default
 because it gives section-precise citations at a third of the context. On longer
 documents this comparison should be re-run before choosing.
 
-**Answers, end to end** (headers + hybrid + rerank):
+**Answers, end to end** (headers chunking, 68 questions). The live run uses
+Claude (`claude-sonnet-5-5`) to write the answers, to judge whether each cited
+passage supports its sentence, and to grade each answer against the golden one:
 
-| Metric | Offline (extractive answers, lexical citation check) | Live (Claude answers, Claude citation judge) |
-|---|---|---|
-| Abstention accuracy | 98.5% | run `python -m src.eval.run_eval --live` |
-| Faithfulness | 100% (extractive answers copy the passages, so this is by construction) | 〃 |
-| Citation accuracy | 100% (by construction, as above) | 〃 |
-| Correctness vs. golden answers | not measured offline | 〃 |
+| Metric | Dense only | **Hybrid + rerank** | Offline baseline (extractive) |
+|---|---|---|---|
+| Faithfulness (sentences supported by their citation) | 93.9% | **94.2%** | 100% by construction |
+| Citation accuracy | 96.0% | **95.6%** | 100% by construction |
+| Abstention accuracy (answer vs. "not in the docs") | 91.2% | **95.6%** | 98.5% |
+| Correctness vs. golden answers (Claude-graded) | 64.7% | **70.6%** | not measured |
 
-The offline answer metrics only prove the pipeline wiring: an extractive
-answer cannot hallucinate. The live run is the real test of generation, and it
-costs a few cents in API calls. Full tables, including the gate calibration,
-are in [docs/EVALUATION.md](docs/EVALUATION.md).
+What the live numbers say:
+
+* **Hybrid retrieval with reranking produces better answers**, not just better
+  rankings: +5.9 points correctness and +4.4 points abstention accuracy over
+  dense-only retrieval, with the same model writing both.
+* **About 94% of answer sentences are backed by the passage they cite**, as
+  judged independently. The rest are the cases the verifier exists for: they
+  lower the answer's confidence, and below 0.5 Athena declines instead.
+* **Correctness is the weakest number, and it is graded strictly.** A partly
+  complete answer scores 0.5, and declining an answerable question scores 0.
+  Abstention drops from 98.5% offline to 95.6% live because the confidence gate
+  rejects some Claude answers that the citation judge did not fully support:
+  Athena prefers saying "not in the docs" to an unsupported answer.
+
+Run it yourself with `python -m src.eval.run_eval --live --quick` (10 to 20
+minutes, a few dollars of API usage). Full tables, including the gate
+calibration, are in [docs/EVALUATION.md](docs/EVALUATION.md).
 
 ## How it works
 
