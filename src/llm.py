@@ -35,6 +35,7 @@ class Usage:
 class LLM:
     client: Any = None
     usage: Usage = field(default_factory=Usage)
+    no_temperature: set[str] = field(default_factory=set)
 
     def _client(self) -> Any:
         if self.client is None:
@@ -48,13 +49,26 @@ class LLM:
         return self.client
 
     def complete(self, *, system: str, user: str, model: str, max_tokens: int = 800) -> str:
-        resp = self._client().messages.create(
-            model=model,
-            max_tokens=max_tokens,
-            temperature=0,
-            system=system,
-            messages=[{"role": "user", "content": user}],
-        )
+        request: dict[str, Any] = {
+            "model": model,
+            "max_tokens": max_tokens,
+            "system": system,
+            "messages": [{"role": "user", "content": user}],
+        }
+        if model not in self.no_temperature:
+            request["temperature"] = 0
+        try:
+            resp = self._client().messages.create(**request)
+        except Exception as exc:
+            # Models that reason before answering reject a custom temperature with a 400.
+            # Remember that for this model and retry once with its default sampling.
+            if "temperature" not in request or getattr(exc, "status_code", None) != 400:
+                raise
+            if "temperature" not in str(exc).lower():
+                raise
+            self.no_temperature.add(model)
+            request.pop("temperature")
+            resp = self._client().messages.create(**request)
         u = getattr(resp, "usage", None)
         self.usage.add(Usage(int(getattr(u, "input_tokens", 0) or 0), int(getattr(u, "output_tokens", 0) or 0), 1))
         return "".join(getattr(b, "text", "") for b in resp.content if getattr(b, "type", "") == "text").strip()
